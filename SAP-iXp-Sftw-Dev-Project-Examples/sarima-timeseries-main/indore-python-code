@@ -1,0 +1,66 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from datetime import datetime, timedelta
+
+data = pd.read_csv('Indore.csv')
+data['dt'] = pd.to_datetime(data['dt'], unit='s')
+end_date = datetime.now()
+start_date = end_date - timedelta(days=90)
+data = data[(data['dt'] >= start_date) & (data['dt'] <= end_date)]
+data.dropna(subset=['dt'], inplace=True)
+data.set_index('dt', inplace=True)
+components = ['main/aqi', 'components/co', 'components/no', 'components/no2', 'components/o3',
+              'components/so2', 'components/pm2_5', 'components/pm10', 'components/nh3']
+data = data[components]
+data = data.sort_index()
+data = data.resample('h').mean()
+
+def plot_component(data, column):
+    plt.figure(figsize=(12, 6))
+    plt.plot(data.index, data[column], label=column)
+    plt.xlabel('Date')
+    plt.ylabel(column)
+    plt.title(f'{column} Trend')
+    plt.legend()
+    plt.show()
+
+def fit_sarima(column):
+    order = (1, 1, 1)
+    seasonal_order = (1, 1, 1, 24)  # Assuming hourly data with daily seasonality
+
+    model = SARIMAX(column, order=order, seasonal_order=seasonal_order, enforce_stationarity=False)
+    fitted_model = model.fit(disp=False)
+
+    forecast_steps = 24 * 90  # 90 days * 24 hours
+    forecast = fitted_model.get_forecast(steps=forecast_steps)
+    forecast_mean = forecast.predicted_mean
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(column.index, column, label='Historical Data')
+    plt.plot(forecast_mean.index, forecast_mean, label='Forecast', color='red')
+    plt.fill_between(forecast_mean.index,
+                     forecast.conf_int().iloc[:, 0],
+                     forecast.conf_int().iloc[:, 1],
+                     color='pink', alpha=0.3)
+    plt.xlabel('Date')
+    plt.ylabel(column.name)
+    plt.title(f'{column.name} SARIMA Forecast')
+    plt.legend()
+    plt.show()
+
+    print(fitted_model.summary())
+    print("\nForecast values:")
+    print(forecast_mean)
+
+# Main execution
+if __name__ == "__main__":
+    # Plot each component
+    for column in data.columns:
+        plot_component(data, column)
+
+    # Apply SARIMA model to each column and plot separately
+    for column in data.columns:
+        print(f"\nFitting SARIMA model for {column}")
+        fit_sarima(data[column])

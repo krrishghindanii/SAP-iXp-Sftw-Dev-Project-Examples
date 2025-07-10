@@ -1,0 +1,82 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+# Load the data
+data = pd.read_csv('LA.csv')
+
+# Convert 'dt' column to datetime
+data['dt'] = pd.to_datetime(data['dt'], unit='s')
+
+# Filter the data to start from January 1, 2021
+start_date = '2021-01-01'
+data = data[data['dt'] >= start_date]
+
+# Drop rows with missing 'dt' values and set 'dt' as the index
+data.dropna(subset=['dt'], inplace=True)
+data.set_index('dt', inplace=True)
+
+# Select relevant columns
+components = ['main/aqi', 'components/co', 'components/no', 'components/no2', 'components/o3',
+              'components/so2', 'components/pm2_5', 'components/pm10', 'components/nh3']
+data = data[components]
+
+# Ensure the data is sorted by date
+data = data.sort_index()
+
+# Resample data to hourly frequency if it's not already
+data = data.resample('h').mean()
+
+def plot_component(data, column):
+    plt.figure(figsize=(12, 6))
+    plt.plot(data.index, data[column], label=column)
+    plt.xlabel('Date')
+    plt.ylabel(column)
+    plt.title(f'{column} Trend')
+    plt.legend()
+    plt.show()
+
+def fit_sarima(column):
+    # Split data into train and test sets
+    train_size = int(len(column) * 0.8)
+    train = column[:train_size]
+    test = column[train_size:]
+
+    order = (1, 1, 1)
+    seasonal_order = (1, 1, 1, 24)  # Assuming hourly data with daily seasonality
+
+    model = SARIMAX(train, order=order, seasonal_order=seasonal_order, enforce_stationarity=False)
+    fitted_model = model.fit(disp=False)
+
+    forecast = fitted_model.get_forecast(steps=len(test))
+    forecast_mean = forecast.predicted_mean
+    plt.figure(figsize=(12, 6))
+    plt.plot(train.index, train, label='Train')
+    plt.plot(test.index, test, label='Test')
+    plt.plot(test.index, forecast_mean, label='Forecast', color='red')
+    plt.fill_between(test.index,
+                     forecast.conf_int().iloc[:, 0],
+                     forecast.conf_int().iloc[:, 1],
+                     color='pink', alpha=0.3)
+    plt.xlabel('Date')
+    plt.ylabel(column.name)
+    plt.title(f'{column.name} SARIMA Forecast')
+    plt.legend()
+    plt.show()
+
+    # Print model summary and forecast values
+    print(fitted_model.summary())
+    print("\nForecast values:")
+    print(forecast_mean)
+
+# Main execution
+if __name__ == "__main__":
+    # Plot each component
+    for column in data.columns:
+        plot_component(data, column)
+
+    # Apply SARIMA model to each column and plot separately
+    for column in data.columns:
+        print(f"\nFitting SARIMA model for {column}")
+        fit_sarima(data[column])
